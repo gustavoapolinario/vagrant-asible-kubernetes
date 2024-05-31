@@ -1,0 +1,223 @@
+---
+- hosts: all
+  become: true
+  vars:
+    k8s_version: "{{ k8s_version }}"
+    k8s_major_version: "{{ k8s_major_version }}"
+  tasks:
+    - fail:
+        msg: "OS should be Ubuntu 22.04, not {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      when: ansible_distribution != 'Ubuntu' or ansible_distribution_version != '22.04'
+
+    - name: Install necessary packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common 
+        - gnupg2
+        - net-tools
+
+
+  ######### Prepare for container.d ###############
+    - name: Get IP eth1 addr
+      shell: ifconfig eth1 | grep 'inet' | cut -d{{':'}} -f2 | awk '{ print $2 }'
+      register: node_ip
+
+    - name: Configure containerd
+      blockinfile:
+        create: true
+        path: /etc/modules-load.d/containerd.conf
+        block: |
+          overlay
+          br_netfilter
+
+    - name: Enable kernel modules
+      become: yes
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
+
+    - name: Configure IP forwarding and iptables
+      blockinfile:
+        create: true
+        path: /etc/sysctl.d/CRI.conf
+        block: |
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Persist changes
+      command: sysctl -p
+
+    - name: Apply sysctl settings
+      command: sysctl --system
+
+
+  # ######### Install docker rep for container.d ###############
+  #   - name: Add an apt signing key for Docker
+  #     apt_key:
+  #       url: https://download.docker.com/linux/ubuntu/gpg
+  #       state: present
+
+  #   - name: Add apt repository for stable version
+  #     apt_repository:
+  #       repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+  #       state: present
+  #       filename: docker.list
+
+
+  ######### Install k8s rep ###############
+    - name: Add an apt signing key for Kubernetes
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_major_version }}/deb/Release.key
+        state: present
+
+    - name: Adding apt repository for Kubernetes
+      apt_repository:
+        repo: deb https://pkgs.k8s.io/core:/stable:/v{{ k8s_major_version }}/deb/ /
+        state: present
+        filename: kubernetes.list
+
+  ######### Install CRI-O rep ###############
+    - name: Add an apt signing key for CRI-O
+      apt_key:
+        url: https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key
+        state: present
+
+    - name: Adding apt repository for CRI-O
+      apt_repository:
+        repo: deb https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/ /
+        state: present
+        filename: cri-o.list
+
+
+  ######### Update apt package index ###############
+    - name: Update apt package index again
+      apt:
+        update_cache: yes
+
+
+  ######### Install container.d ###############
+    - name: Install containerd
+      apt: 
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        # - containerd.io
+        # - docker-ce-cli
+        - cri-o
+      # notify:
+      #   - docker status
+      # notify: crio service
+
+    # - name: Containerd Config
+    #   become: yes
+    #   command: containerd config default | sudo cat > /etc/containerd/config.toml
+    #   # notify: containerd service
+
+    # - name: Containerd Config
+    #   become: yes
+    #   command: sudo sed -i '/disabled_plugins = \[/ s/\<"cri"\>,\? *\| *\?"cri",\? *//' /etc/containerd/config.toml
+    #   # notify: containerd service
+
+    # - name: Restart containerd
+    #   ansible.builtin.systemd_service:
+    #     name: containerd
+    #     state: restarted
+
+    - name: Restart crio
+      ansible.builtin.systemd_service:
+        name: crio
+        state: restarted
+
+    # # run handlers now
+    # - name: Flush handlers
+    #   meta: flush_handlers
+    # # next commands will run with the containerd restarted
+
+  ######### Remote swap to kubelet ###############
+    - name: Remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+
+  ######### Install kube commands ###############
+
+    # search the latest to complete the version choosed by user
+    - name: Get the latest version of kubelet {{ k8s_version }}
+      shell: apt-cache madison kubelet | grep {{ k8s_version }} | head -n1 | awk '{print $3}'
+      register: kubelet_version
+
+    - name: Print Kubelet version finded
+      debug:
+        msg: "{{ kubelet_version.stdout }}"
+
+    # Install based on kubelet_version finded
+    - name: Install Kubernetes binaries
+      apt: 
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - kubelet={{ kubelet_version.stdout }}
+          - kubeadm={{ kubelet_version.stdout }}
+          - kubectl={{ kubelet_version.stdout }}
+
+    - name: Hold k8s packages
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    # - name: Configure kubelet
+    #   lineinfile:
+    #     path: /etc/default/kubelet
+    #     line: Environment="KUBELET_EXTRA_ARGS=--node-ip={{ node_ip.stdout }}"
+
+    # - name: Restart kubelet
+    #   service:
+    #     name: kubelet
+    #     daemon_reload: yes
+    #     state: restarted
+
+#
+# Handlers
+#
+  # handlers:
+
+  #   - name: crio status
+  #     service: 
+  #       name: crio
+  #       state: restarted
+  #       enabled: yes
+  #     listen: crio service
+
+    # - name: kubelet status
+    #   service:
+    #     name: kubelet
+    #     state: restarted
+    #     daemon_reload: yes
+    #     enabled: yes
+    #   listen: kubelet service
+

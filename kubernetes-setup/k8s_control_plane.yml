@@ -1,0 +1,125 @@
+#
+# Control Plane / Master Node
+#
+- hosts: all
+  become: yes
+  vars:
+    k8s_version: "{{ k8s_version }}"
+    calico_version: "{{ calico_version }}"
+  tasks:
+
+    ######### Init K8s Cluster ###############
+    - name: Check if Kubernetes is already initialized
+      become: yes
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_init_check    
+
+    # - name: Print Join command
+    #   debug:
+    #     msg: "kubeadm init --node-name k8s-master --pod-network-cidr=192.168.56.0/21 --apiserver-advertise-address={{ ansible_default_ipv4.address }}"
+
+    - name: Initialize the Kubernetes cluster using kubeadm
+      become: yes
+      command: kubeadm init --node-name k8s-master --pod-network-cidr=192.168.56.0/21 --apiserver-advertise-address=192.168.56.10 #--apiserver-cert-extra-sans="192.168.56.10" 
+      when: not kubeadm_init_check.stat.exists
+      # notify: kubelet service
+    
+
+    ######### kube config ###############
+    - name: Check if kube config file is already created
+      become: yes
+      stat:
+        path: /home/vagrant/.kube/config
+      register: kube_config_check
+
+    - name: Create kube directory
+      file:
+        path: /home/vagrant/.kube
+        state: directory
+      when: not kube_config_check.stat.exists
+
+    - name: Setup kubeconfig for vagrant user
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/vagrant/.kube/config
+        remote_src: yes
+        owner: vagrant
+        group: vagrant
+        mode: '0644'
+      when: not kube_config_check.stat.exists
+
+    # # Copy the admin.conf to use kubectl local
+    # - name: Copy admin.conf to home directory
+    #   fetch:
+    #     src: /etc/kubernetes/admin.conf
+    #     dest: "~/.kube/vagrant"
+    #     flat: yes
+    #     validate_certs: no
+    #   become: false
+    #   # when: not kube_config_check.stat.exists
+
+    - name: Fetch the admin.conf file to local machine
+      fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: ./admin.conf
+        flat: yes
+
+
+    # # run handlers now
+    # - name: Flush handlers
+    #   meta: flush_handlers
+    # # next commands will run with the kubelet restarted
+
+    ######### Generate K8s Cluster Join Command ###############
+    - name: Check if join command already exists
+      become: no
+      stat:
+        path: "./join-command"
+      delegate_to: localhost
+      register: join_command_check
+
+    - name: Generate join command
+      command: kubeadm token create --print-join-command
+      register: join_command
+      when: not join_command_check.stat.exists
+
+    - name: Print Join command
+      debug:
+        msg: "{{ join_command.stdout_lines[0] }}"
+      when: not join_command_check.stat.exists
+
+
+    - name: Copy join command to local file
+      local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join-command"
+      become: false
+      when: not join_command_check.stat.exists
+
+
+    ######### Install Network plugin CNI - Calico ###############
+    - name: Check if calico resources already exist
+      shell: kubectl get namespaces tigera-operator
+      become: false
+      ignore_errors: true
+      register: calico_namespace_check
+
+    - name: Download calico.conf
+      get_url:
+        url: https://raw.githubusercontent.com/projectcalico/calico/v{{ calico_version }}/manifests/tigera-operator.yaml
+        dest: /home/vagrant/calico.yaml
+      become: false
+      when: calico_namespace_check.rc != 0
+
+    - name: Install calico pod network
+      become: false
+      command: kubectl create -f /home/vagrant/calico.yaml
+      when: calico_namespace_check.rc != 0
+
+  # handlers:
+
+  #   - name: kubelet status
+  #     service:
+  #       name: kubelet
+  #       state: restarted
+  #       enabled: yes
+  #     listen: kubelet service

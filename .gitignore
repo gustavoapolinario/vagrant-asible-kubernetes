@@ -1,0 +1,5 @@
+.DS_Store
+.vagrant/
+kubernetes-setup/join-command
+kubernetes-setup/admin.conf
+kubernetes-setup/node-playbook.retry

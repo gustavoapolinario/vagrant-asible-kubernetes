@@ -1,0 +1,14 @@
+#
+# Worker Node
+#
+- hosts: all
+  become: yes
+  vars:
+    saved_join_command: "{{ lookup('file', './join-command') }}"
+  tasks:
+
+    # Join server on k8s Cluster
+    - name: Run the saved join command on another server
+      command: "{{ saved_join_command }}"
+
+

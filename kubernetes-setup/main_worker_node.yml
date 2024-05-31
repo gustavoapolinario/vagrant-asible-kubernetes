@@ -1,0 +1,3 @@
+---
+- import_playbook: k8s_common.yml
+- import_playbook: k8s_worker_node.yml
