@@ -1,11 +1,11 @@
 ---
 - hosts: all
   become: true
-  vars:
-    k8s_version: "{{ k8s_version }}"
-    k8s_major_version: "{{ k8s_major_version }}"
+  vars_files:
+    - vars.yml
   tasks:
-    - fail:
+    - name: fail if not tested ubuntu version
+      fail:
         msg: "OS should be Ubuntu 22.04, not {{ ansible_distribution }} {{ ansible_distribution_version }}"
       when: ansible_distribution != 'Ubuntu' or ansible_distribution_version != '22.04'
 
@@ -24,15 +24,15 @@
         - net-tools
 
 
-  ######### Prepare for container.d ###############
+  ######### Prepare for CRI ###############
     - name: Get IP eth1 addr
       shell: ifconfig eth1 | grep 'inet' | cut -d{{':'}} -f2 | awk '{ print $2 }'
       register: node_ip
 
-    - name: Configure containerd
+    - name: Configure CRI
       blockinfile:
         create: true
-        path: /etc/modules-load.d/containerd.conf
+        path: /etc/modules-load.d/CRI.conf
         block: |
           overlay
           br_netfilter
@@ -103,8 +103,8 @@
         update_cache: yes
 
 
-  ######### Install container.d ###############
-    - name: Install containerd
+  ######### Install CRI ###############
+    - name: Install CRI
       apt: 
         name: "{{ packages }}"
         state: present

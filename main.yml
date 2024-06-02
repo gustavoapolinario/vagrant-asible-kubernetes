@@ -1,0 +1,2 @@
+- name: Include playbook Kubernetes
+  ansible.builtin.import_playbook: kubernetes-setup/k8s_setup.yml

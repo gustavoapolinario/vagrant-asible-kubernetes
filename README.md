@@ -50,11 +50,32 @@ Only needs to run:
 vagrant up
 ```
 
-## Re-run
+or to be quickly, create simulteously the instances
 
 ```ssh
-vagrant provision
+grep config.vm.define Vagrantfile | awk -F'"' '{print $2}' | xargs -P2 -I {} vagrant up {}
 ```
+
+### Start Configuration Input
+
+When starup the environment, The vagrant you pronpt you the network bridge to use.
+
+Use the same as your computer are using.
+
+ex:
+```
+==> k8s-master: Available bridged network interfaces:
+1) wlp5s0
+2) eno1
+3) docker0
+4) br-276cf7cfe68f
+==> k8s-master: When choosing an interface, it is usually the one that is
+==> k8s-master: being used to connect to the internet.
+==> k8s-master: 
+    k8s-master: Which interface should the network bridge to?
+```
+
+My computer is using wifi, I will use wlp5s0. If your computer are wired, use eno1.
 
 ## Suspend
 
@@ -65,13 +86,21 @@ vagrant suspend
 ## Resume
 
 ```ssh
-vagrant suspend
+vagrant resume
 ```
 
 ## Clear / Destroy
 
 ```ssh
 vagrant destroy
+```
+
+# Executing the ansible
+
+To configure the VM created by vagrant, run the ansible with the command:
+
+```
+ansible-playbook main.yml
 ```
 
 # Connecting on Kubernetes

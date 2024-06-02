@@ -1,8 +1,10 @@
 #
 # Worker Node
 #
-- hosts: all
+- hosts: worker
   become: yes
+  vars_files:
+    - vars.yml
   vars:
     saved_join_command: "{{ lookup('file', './join-command') }}"
   tasks:

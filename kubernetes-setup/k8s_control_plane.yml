@@ -1,11 +1,10 @@
 #
 # Control Plane / Master Node
 #
-- hosts: all
+- hosts: controlplane
   become: yes
-  vars:
-    k8s_version: "{{ k8s_version }}"
-    calico_version: "{{ calico_version }}"
+  vars_files:
+    - vars.yml
   tasks:
 
     ######### Init K8s Cluster ###############
@@ -13,7 +12,7 @@
       become: yes
       stat:
         path: /etc/kubernetes/admin.conf
-      register: kubeadm_init_check    
+      register: kubeadm_init_check
 
     # - name: Print Join command
     #   debug:
@@ -21,7 +20,10 @@
 
     - name: Initialize the Kubernetes cluster using kubeadm
       become: yes
+      # one master only
       command: kubeadm init --node-name k8s-master --pod-network-cidr=192.168.56.0/21 --apiserver-advertise-address=192.168.56.10 #--apiserver-cert-extra-sans="192.168.56.10" 
+      # HA 
+      # command: kubeadm init --control-plane-endpoint "192.168.56.9:6443" --upload-certs
       when: not kubeadm_init_check.stat.exists
       # notify: kubelet service
     
@@ -75,8 +77,7 @@
     - name: Check if join command already exists
       become: no
       stat:
-        path: "./join-command"
-      delegate_to: localhost
+        path: "/join-command"
       register: join_command_check
 
     - name: Generate join command
@@ -89,6 +90,11 @@
         msg: "{{ join_command.stdout_lines[0] }}"
       when: not join_command_check.stat.exists
 
+    - name: Save join command to file on server
+      copy:
+        content: "{{ join_command.stdout }}"
+        dest: /join-command
+      when: not join_command_check.stat.exists
 
     - name: Copy join command to local file
       local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join-command"
