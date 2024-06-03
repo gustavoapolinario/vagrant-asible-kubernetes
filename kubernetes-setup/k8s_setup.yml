@@ -1,9 +1,14 @@
+- name: Include playbook HAproxy loadbalancer to Kubernetes Control Plane HA
+  ansible.builtin.import_playbook: haproxy.yml
 
 - name: Include playbook kubernetes Common
   ansible.builtin.import_playbook: k8s_common.yml
 
 - name: Include playbook kubernetes Control Plane
   ansible.builtin.import_playbook: k8s_control_plane.yml
+
+- name: Include playbook kubernetes Control Plane Join
+  ansible.builtin.import_playbook: k8s_control_plane_join.yml
 
 - name: Include playbook kubernetes Worker Node
   ansible.builtin.import_playbook: k8s_worker_node.yml

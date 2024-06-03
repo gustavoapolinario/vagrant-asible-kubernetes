@@ -1,5 +1,5 @@
 ---
-- hosts: all
+- hosts: controlplanefirst,controlplaneha,worker
   become: true
   vars_files:
     - vars.yml
@@ -118,30 +118,10 @@
       #   - docker status
       # notify: crio service
 
-    # - name: Containerd Config
-    #   become: yes
-    #   command: containerd config default | sudo cat > /etc/containerd/config.toml
-    #   # notify: containerd service
-
-    # - name: Containerd Config
-    #   become: yes
-    #   command: sudo sed -i '/disabled_plugins = \[/ s/\<"cri"\>,\? *\| *\?"cri",\? *//' /etc/containerd/config.toml
-    #   # notify: containerd service
-
-    # - name: Restart containerd
-    #   ansible.builtin.systemd_service:
-    #     name: containerd
-    #     state: restarted
-
     - name: Restart crio
       ansible.builtin.systemd_service:
         name: crio
         state: restarted
-
-    # # run handlers now
-    # - name: Flush handlers
-    #   meta: flush_handlers
-    # # next commands will run with the containerd restarted
 
   ######### Remote swap to kubelet ###############
     - name: Remove swapfile from /etc/fstab
@@ -189,35 +169,3 @@
         - kubelet
         - kubeadm
         - kubectl
-
-    # - name: Configure kubelet
-    #   lineinfile:
-    #     path: /etc/default/kubelet
-    #     line: Environment="KUBELET_EXTRA_ARGS=--node-ip={{ node_ip.stdout }}"
-
-    # - name: Restart kubelet
-    #   service:
-    #     name: kubelet
-    #     daemon_reload: yes
-    #     state: restarted
-
-#
-# Handlers
-#
-  # handlers:
-
-  #   - name: crio status
-  #     service: 
-  #       name: crio
-  #       state: restarted
-  #       enabled: yes
-  #     listen: crio service
-
-    # - name: kubelet status
-    #   service:
-    #     name: kubelet
-    #     state: restarted
-    #     daemon_reload: yes
-    #     enabled: yes
-    #   listen: kubelet service
-

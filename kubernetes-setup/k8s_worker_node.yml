@@ -9,7 +9,7 @@
     saved_join_command: "{{ lookup('file', './join-command') }}"
   tasks:
 
-    # Join server on k8s Cluster
+    # Join server on k8s Cluster as Worker Node
     - name: Run the saved join command on another server
       command: "{{ saved_join_command }}"
 

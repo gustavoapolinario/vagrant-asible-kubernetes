@@ -2,7 +2,9 @@
 
 Project to create a local environment to run kubernetes server.
 
-The vagrant creates a Kubernetes Cluster with the control plane and N workers.
+The vagrant creates a Kubernetes Cluster with N control planes and N workers.
+
+To Control Plane works in HA, we need a loadbalancing to them. The haproxy will be this loadbalancig with a new instance for him.
 
 All server configuration is made by Ansible.
 
@@ -13,26 +15,36 @@ All server configuration is made by Ansible.
 
 # Version
 
+
+## Vagrantfile
+
 Verify the Vagrantfile to get the version of all used components.
 
 On Vagrantfile you can change the variables as needed.
 
 ```ssh
 IMAGE_NAME = "ubuntu/jammy64" # ubuntu 22.04
-QTD_NODES = 2
-# K8S_VERSION = "1.30" # You can use this way to install the latest minor version
-K8S_VERSION = "1.30.1-1.1" # You can use this way to install exacly version
-K8S_MAJOR_VERSION = "1.30"
-CALICO_VERSION = "3.28.0"
+QTD_CONTROL_PLANES = 2
+QTD_WORKER_NODES = 2
 ```
 
 IMAGE_NAME: Image name to Vagrant file
 
 QTD_NODES: Quantity of worker nodes
 
-K8S_VERSION: Version of kubelet/kubeadm/kubectl to install. You can use exacly version or Major
+## Ansible / Kubernetes Configuration
 
-and the script will select for you based on SO repository.
+Edit the kubernetes-setup/vars.yml as needed
+
+
+```yaml
+# k8s_version: "1.30" # You can use this way to install the latest minor version
+k8s_version: "1.30.1-1.1" # You can use this way to install exacly version
+k8s_major_version: "1.30"
+calico_version: "3.28.0"
+```
+
+K8S_VERSION: Version of kubelet/kubeadm/kubectl to install. You can use exacly version or Major and the script will select for you based on SO repository.
 
 K8S_MAJOR_VERSION: Major kubernetes version (needs be based on K8S_VERSION minor)
 
@@ -50,32 +62,22 @@ Only needs to run:
 vagrant up
 ```
 
-or to be quickly, create simulteously the instances
+or to be quickly, you can create simulteously the instances:
 
 ```ssh
-grep config.vm.define Vagrantfile | awk -F'"' '{print $2}' | xargs -P2 -I {} vagrant up {}
+vagrant up haproxy &
+vagrant up controlplane-1 &
+vagrant up controlplane-2 &
+vagrant up node-1 &
+vagrant up node-2
 ```
 
-### Start Configuration Input
 
-When starup the environment, The vagrant you pronpt you the network bridge to use.
+## Stop
 
-Use the same as your computer are using.
-
-ex:
+```ssh
+vagrant halt
 ```
-==> k8s-master: Available bridged network interfaces:
-1) wlp5s0
-2) eno1
-3) docker0
-4) br-276cf7cfe68f
-==> k8s-master: When choosing an interface, it is usually the one that is
-==> k8s-master: being used to connect to the internet.
-==> k8s-master: 
-    k8s-master: Which interface should the network bridge to?
-```
-
-My computer is using wifi, I will use wlp5s0. If your computer are wired, use eno1.
 
 ## Suspend
 
@@ -95,7 +97,7 @@ vagrant resume
 vagrant destroy
 ```
 
-# Executing the ansible
+# Ansible
 
 To configure the VM created by vagrant, run the ansible with the command:
 
@@ -103,11 +105,33 @@ To configure the VM created by vagrant, run the ansible with the command:
 ansible-playbook main.yml
 ```
 
-# Connecting on Kubernetes
+## About Ansible
+
+The ansible configuration is on ansible.cfg
+
+You can check the inventory in hosts.ini file.
+
+When the ansible runs, it will execute main.yml, who will call the kuebrentes-setup/k8s_setup.yml.
+
+The playbooks called by kuebrentes-setup/k8s_setup.yml load the vars.yml.
+
+haproxy.yml: Configure Control Plane Loadbalance with HAProxy
+
+k8s_common.yml: Configure Kubernetes packages and CRI
+
+k8s_control_plane.yml: Configure the First Control Plane
+
+k8s_control_plane_join.yml: Configure Others Control Planes by kubeadm join command
+
+k8s_worker_node.yml: Configure worker nodes by kubeadm command
+
+
+
+# Kubectl
 
 The ansible script configure the user vagrant inside k8s-master VM (Control Plane) and copy the configuration to admin.conf file.
 
-## Test on Control plane
+## Test inside Control plane
 
 Access the k8s-master VM
 
@@ -119,10 +143,11 @@ Execute the kubectl command
 
 ```ssh
 vagrant@k8s-master:~$ kubectl  get nodes
-NAME         STATUS   ROLES           AGE     VERSION
-k8s-master   Ready    control-plane   12m     v1.30.1
-node-1       Ready    <none>          9m17s   v1.30.1
-node-2       Ready    <none>          6m5s    v1.30.1
+NAME             STATUS   ROLES           AGE     VERSION
+controlplane-1   Ready    control-plane   26m     v1.30.1
+controlplane-2   Ready    control-plane   25s     v1.30.1
+node-1           Ready    <none>          9m17s   v1.30.1
+node-2           Ready    <none>          6m5s    v1.30.1
 ```
 
 ## Test direct from your PC

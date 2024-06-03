@@ -1,0 +1,35 @@
+#
+# Worker Node
+#
+- hosts: controlplaneha
+  become: yes
+  vars_files:
+    - vars.yml
+  vars:
+    saved_join_command: "{{ lookup('file', './join-command') }}"
+    saved_certificate_key: "{{ lookup('file', './certificate-key') }}"
+  tasks:
+
+    - name: Check if Kubernetes is already initialized
+      become: yes
+      stat:
+        path: /join-cmd
+      register: kubeadm_join_check
+
+    - name: Print Control Plane Join command
+      debug:
+        msg: "{{ saved_join_command }} --control-plane --certificate-key {{ saved_certificate_key }} --apiserver-advertise-address={{ ansible_host }}"
+      when: not kubeadm_join_check.stat.exists
+
+    # Join server on k8s Cluster as New Control Plance
+    - name: Run the saved join command with certificate-key to join as control-plane role
+      command: "{{ saved_join_command }} --control-plane --certificate-key {{ saved_certificate_key }} --apiserver-advertise-address={{ ansible_host }}"
+      when: not kubeadm_join_check.stat.exists
+
+
+    - name: Save certificate-key to file on server
+      copy:
+        content: "{{ saved_join_command }} --control-plane --certificate-key {{ saved_certificate_key }} --apiserver-advertise-address={{ ansible_host }}"
+        dest: /join-cmd
+      when: not kubeadm_join_check.stat.exists
+
